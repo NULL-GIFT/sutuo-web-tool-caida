@@ -206,6 +206,13 @@ with col2:
                                     accept_multiple_files=False,
                                     help="只需要传一个包含班级名单的 .xlsx 模板")
 
+# --- 初始化系统的“记忆” ---
+if 'processed' not in st.session_state:
+    st.session_state.processed = False
+    st.session_state.excel_data = None
+    st.session_state.excel_name = None
+    st.session_state.log_text = None
+
 # --- 2. 核心处理区 ---
 st.subheader("⚙️ 第二步：执行录入")
 if st.button("🚀 开始提取并填表", type="primary"):
@@ -222,10 +229,8 @@ if st.button("🚀 开始提取并填表", type="primary"):
                 out_dir = os.path.join(base_temp_dir, "output")
                 ex_dir = os.path.join(base_temp_dir, "extract")
 
-                os.makedirs(p_dir);
-                os.makedirs(c_dir)
-                os.makedirs(out_dir);
-                os.makedirs(ex_dir)
+                os.makedirs(p_dir); os.makedirs(c_dir)
+                os.makedirs(out_dir); os.makedirs(ex_dir)
 
                 # 把用户传进来的内存文件，保存到沙箱里
                 for p_file in personal_uploads:
@@ -239,30 +244,41 @@ if st.button("🚀 开始提取并填表", type="primary"):
                 results, log_text = process_data(p_dir, c_dir, out_dir, ex_dir)
 
                 if results:
-                    st.success("✅ 处理完成！请在下方下载结果。")
+                    # ✅ 核心改动：把处理结果存进系统的“记忆”里！
+                    st.session_state.processed = True
+                    st.session_state.log_text = log_text
+                    st.session_state.excel_name = os.path.basename(results[0])
+                    # 把生成的文件读取成二进制数据存起来
+                    with open(results[0], "rb") as f:
+                        st.session_state.excel_data = f.read()
+                else:
+                    st.warning("⚠️ 处理结束，但没有生成新的总表，请检查控制台日志或模板格式。")
+                    st.session_state.processed = False
+                    st.session_state.log_text = log_text
 
-                    # --- 3. 结果下载与日志显示 ---
-                    st.subheader("⬇️ 第三步：下载结果")
+# --- 3. 结果下载与日志显示 (独立出来，靠记忆判断) ---
+# 只要记忆里显示处理过了，就把这块区域展示出来，点一万次下载也不会消失
+if st.session_state.processed:
+    st.success("✅ 处理完成！请在下方下载结果。")
+    st.subheader("⬇️ 第三步：下载结果")
 
-                    # 使用两列布局，把两个下载按钮并排放在一起
-                    col_dl1, col_dl2 = st.columns(2)
+    # 使用两列布局，把两个下载按钮并排放在一起
+    col_dl1, col_dl2 = st.columns(2)
 
-                    with col_dl1:
-                        with open(results[0], "rb") as f:
-                            st.download_button(
-                                label="📥 下载填写完毕的总表",
-                                data=f,
-                                file_name=os.path.basename(results[0]),
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
+    with col_dl1:
+        st.download_button(
+            label="📥 下载填写完毕的总表",
+            data=st.session_state.excel_data,
+            file_name=st.session_state.excel_name,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
-                    with col_dl2:
-                        # 这是为你新增的核对清单下载按钮！
-                        st.download_button(
-                            label="📝 下载最终核对清单 (.txt)",
-                            data=log_text,
-                            file_name="最终核对清单.txt",
-                            mime="text/plain"
-                        )
+    with col_dl2:
+        st.download_button(
+            label="📝 下载最终核对清单 (.txt)",
+            data=st.session_state.log_text,
+            file_name="最终核对清单.txt",
+            mime="text/plain"
+        )
 
-                    st.text_area("📄 运行日志 (详细核对清单)", value=log_text, height=300)
+    st.text_area("📄 运行日志 (详细核对清单)", value=st.session_state.log_text, height=300)
